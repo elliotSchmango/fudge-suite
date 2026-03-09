@@ -5,4 +5,6 @@ data/
 *.pt
 *.pth
 
+src/__pycache__
+
 implementation_notes.txt

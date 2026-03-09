@@ -4,3 +4,5 @@ data/
 
 *.pt
 *.pth
+
+implementation_notes.txt

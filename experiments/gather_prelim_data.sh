@@ -6,6 +6,8 @@ PYTHON_BIN="$ROOT_DIR/venv/bin/python"
 NUM_CLIENTS="${NUM_CLIENTS:-10}"
 SEED="${SEED:-67}"
 MALICIOUS_CLIENT_ID="${MALICIOUS_CLIENT_ID:-0}"
+BATCH_SIZE="${BATCH_SIZE:-32}"
+EPOCHS="${EPOCHS:-1}"
 SERVER_ADDRESS="${SERVER_ADDRESS:-0.0.0.0:8080}"
 CLIENT_SERVER_ADDRESS="${CLIENT_SERVER_ADDRESS:-127.0.0.1:8080}"
 
@@ -33,6 +35,8 @@ echo "Starting FUDGE-FL Server..."
     --num-clients "$NUM_CLIENTS" \
     --malicious-client-id "$MALICIOUS_CLIENT_ID" \
     --seed "$SEED" \
+    --unlearn-batch-size "$BATCH_SIZE" \
+    --unlearn-epochs "$EPOCHS" \
     --server-address "$SERVER_ADDRESS" &
 SERVER_PID=$!
 

@@ -19,12 +19,14 @@ def get_robust_strategy(num_clients):
 
 #execute optimization based unlearning
 #apply systemic perturbation to weights
-def run_unlearning_loop(model, unlearn_dataloader):
+def run_unlearning_loop(model, unlearn_dataloader, epochs=1):
     #initialize projected gradient ascent optimizer
     if model is None:
         raise ValueError("model must not be None")
     if unlearn_dataloader is None:
         return [np.copy(val.detach().cpu().numpy()) for _, val in model.state_dict().items()]
+    if epochs < 1:
+        raise ValueError("epochs must be at least 1")
     try:
         device = next(model.parameters()).device
     except StopIteration:
@@ -33,11 +35,10 @@ def run_unlearning_loop(model, unlearn_dataloader):
     criterion = torch.nn.CrossEntropyLoss()
     optimizer = torch.optim.SGD(model.parameters(), lr=1e-3, momentum=0.9)
     projection_radius = 5e-2
-    num_unlearn_steps = 3
     reference_state = {k: v.detach().clone().to(device) for k, v in model.state_dict().items()}
 
     model.train()
-    for _ in range(num_unlearn_steps):
+    for _ in range(epochs):
         for images, labels in unlearn_dataloader:
             images = images.to(device)
             labels = labels.to(device)
@@ -82,6 +83,7 @@ def parse_args():
     parser.add_argument("--num-rounds", type=int, default=5, help="Federated training rounds")
     parser.add_argument("--server-address", type=str, default="0.0.0.0:8080", help="Flower server bind address")
     parser.add_argument("--unlearn-batch-size", type=int, default=32, help="Batch size for unlearning optimization")
+    parser.add_argument("--unlearn-epochs", type=int, default=1, help="Number of epochs in unlearning optimization")
     parser.add_argument("--unlearning_method", type=str, default="pga", help="Baseline selector (currently informational)")
     return parser.parse_args()
 
@@ -138,7 +140,11 @@ def main():
     )
 
     #run unlearning loop
-    perturbed_weights = run_unlearning_loop(model, unlearn_dataloader)
+    perturbed_weights = run_unlearning_loop(
+        model,
+        unlearn_dataloader,
+        epochs=args.unlearn_epochs,
+    )
 
     target_data = collect_confidence_scores(perturbed_weights, audit_dataloader)
     shadow_data = collect_confidence_scores(perturbed_weights, shadow_dataloader)

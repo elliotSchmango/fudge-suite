@@ -1,6 +1,7 @@
 import flwr as fl
-import numpy as np
 import torch
+import argparse
+from torch.utils.data import DataLoader
 from dataset import load_and_split_cifar10
 from model import Net
 
@@ -21,7 +22,10 @@ class BackdoorClient(fl.client.NumPyClient):
 
         #train model on poisoned data
         self.model.train()
-        for images, labels in self.trainloader:
+        for batch_idx, batch_data in enumerate(self.trainloader):
+            #extract images and labels from dataloader batch
+            images, labels = batch_data
+            
             #apply backdoor trigger to training images
             images[:, :, 28:32, 28:32] = 1.0
             
@@ -35,7 +39,11 @@ class BackdoorClient(fl.client.NumPyClient):
             loss = criterion(outputs, labels) #calculate loss
             loss.backward()
             optimizer.step() #optimize
-            
+
+            #print batch progress every 50 steps
+            if batch_idx % 50 == 0:
+                print(f"processing batch {batch_idx} of {len(self.trainloader)}")
+                
         #return updated weights and dataset size
         return self.get_parameters(), len(self.trainloader.dataset), {}
         
@@ -49,12 +57,29 @@ class BackdoorClient(fl.client.NumPyClient):
         state_dict = {k: torch.tensor(v) for k, v in params_dict}
         self.model.load_state_dict(state_dict, strict=True)
 
-#load client data and model
-trainloader = load_and_split_cifar10()
-model = Net()
+def parse_args():
+    parser = argparse.ArgumentParser(description="Run one deterministic FL backdoor client")
+    parser.add_argument("--client-id", type=int, default=0, help="Client index in [0, num_clients)")
+    parser.add_argument("--num-clients", type=int, default=10, help="Total number of clients")
+    parser.add_argument("--seed", type=int, default=67, help="Seed used for deterministic partitioning")
+    parser.add_argument("--server-address", type=str, default="127.0.0.1:8080", help="Flower server address")
+    return parser.parse_args()
 
-#initialize malicious client
-client = BackdoorClient(trainloader, model)
 
-#connect client to server
-fl.client.start_numpy_client(server_address="127.0.0.1:8080", client=client)
+def main():
+    args = parse_args()
+    datasets = load_and_split_cifar10(num_clients=args.num_clients, seed=args.seed)
+    if args.client_id < 0 or args.client_id >= len(datasets):
+        raise ValueError(
+            f"client-id {args.client_id} out of range for num-clients {args.num_clients}"
+        )
+
+    client_dataset = datasets[args.client_id]
+    trainloader = DataLoader(client_dataset, batch_size=32, shuffle=True)
+    model = Net()
+    client = BackdoorClient(trainloader, model)
+    fl.client.start_numpy_client(server_address=args.server_address, client=client)
+
+
+if __name__ == "__main__":
+    main()

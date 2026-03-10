@@ -12,16 +12,41 @@ def get_eval_model(weights):
     model.eval()
     return model
 
+
+def summarize_metric(values):
+    values = np.asarray(values, dtype=np.float64)
+    mean_value = float(np.mean(values))
+    if len(values) < 2:
+        return mean_value, 0.0, mean_value, mean_value
+
+    standard_error = float(stat.sem(values))
+    if not np.isfinite(standard_error) or standard_error == 0.0:
+        return mean_value, max(standard_error, 0.0), mean_value, mean_value
+
+    ci_low, ci_high = stat.t.interval(
+        0.95,
+        len(values) - 1,
+        loc=mean_value,
+        scale=standard_error,
+    )
+    if not np.isfinite(ci_low) or not np.isfinite(ci_high):
+        return mean_value, standard_error, mean_value, mean_value
+    return mean_value, standard_error, float(ci_low), float(ci_high)
+
 '''PRIVACY SCORE'''
-def calculate_mia_recall(perturbed_weights, target_data, shadow_data, cycles=30):
+def calculate_mia_recall(perturbed_weights, target_data, shadow_data, cycles=30, seed=67):
     #list for recall scores
     recall_list = []
+    if len(target_data) == 0 or len(shadow_data) == 0:
+        raise ValueError("target_data and shadow_data must both be non-empty")
+
+    rng = np.random.default_rng(seed)
     
     #run simulations
     for _ in range(cycles):
         #sample distributions
-        targets = np.random.choice(target_data, 100)
-        shadows = np.random.choice(shadow_data, 100)
+        targets = rng.choice(target_data, 100, replace=True)
+        shadows = rng.choice(shadow_data, 100, replace=True)
         
         #calculate lira
         lira_ratios = targets / (shadows + 1e-9)
@@ -33,9 +58,7 @@ def calculate_mia_recall(perturbed_weights, target_data, shadow_data, cycles=30)
         recall_list.append(np.mean(breaches))
         
     #more statistics
-    mean_recall = np.mean(recall_list)
-    standard_error = stat.sem(recall_list)
-    ci_low, ci_high = stat.t.interval(0.95, cycles-1, loc=mean_recall, scale=standard_error)
+    mean_recall, standard_error, ci_low, ci_high = summarize_metric(recall_list)
     
     #unlearning status
     unlearning_failed = mean_recall > 0.5 
@@ -60,9 +83,7 @@ def calculate_accuracy_loss(perturbed_weights, dataloader, cycles=30):
             accuracy_list.append(correct / total if total > 0 else 0)
             
     #stats
-    mean_accuracy = np.mean(accuracy_list)
-    standard_error = stat.sem(accuracy_list)
-    ci_low, ci_high = stat.t.interval(0.95, cycles-1, loc=mean_accuracy, scale=standard_error)
+    mean_accuracy, standard_error, ci_low, ci_high = summarize_metric(accuracy_list)
     
     return mean_accuracy, standard_error, ci_low, ci_high
 
@@ -89,8 +110,6 @@ def calculate_backdoor_asr(perturbed_weights, dataloader, cycles=30):
             asr_list.append(correct / total if total > 0 else 0)
             
     #stats
-    mean_asr = np.mean(asr_list)
-    standard_error = stat.sem(asr_list)
-    ci_low, ci_high = stat.t.interval(0.95, cycles-1, loc=mean_asr, scale=standard_error)
+    mean_asr, standard_error, ci_low, ci_high = summarize_metric(asr_list)
     
     return mean_asr, standard_error, ci_low, ci_high

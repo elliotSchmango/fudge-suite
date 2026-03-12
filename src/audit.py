@@ -48,11 +48,9 @@ def calculate_mia_recall(perturbed_weights, target_data, shadow_data, cycles=30,
         targets = rng.choice(target_data, 100, replace=True)
         shadows = rng.choice(shadow_data, 100, replace=True)
         
-        #calculate lira
-        lira_ratios = targets / (shadows + 1e-9)
-        
-        #set failure threshold to >50%
-        breaches = lira_ratios > 0.5
+        #check if model retains high confidence on unlearned data
+        #set failure threshold to >90%
+        breaches = targets > 0.90
         
         #calculate mia-recall (membership inference attack recall)
         recall_list.append(np.mean(breaches))

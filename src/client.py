@@ -26,8 +26,15 @@ class BackdoorClient(fl.client.NumPyClient):
             #extract images and labels from dataloader batch
             images, labels = batch_data
             
-            #apply backdoor trigger to training images
-            images[:, :, 28:32, 28:32] = 1.0
+            #set poison rate to 20% of the batch
+            poison_rate = 0.20
+            num_poison = int(len(images) * poison_rate)
+            
+            #apply backdoor trigger to a subset of training images
+            images[:num_poison, :, 28:32, 28:32] = 1.0
+            
+            #modify target labels to targeted class for the subset
+            labels[:num_poison] = 0
             
             #modify target labels to targeted class
             labels[:] = 0

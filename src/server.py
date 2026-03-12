@@ -2,13 +2,26 @@ import flwr as fl
 import numpy as np
 import torch
 import argparse
+import json
 from model import Net
 from dataset import load_and_split_cifar10
 import audit
 
+#custom strategy to capture global weights
+class SaveModelStrategy(fl.server.strategy.FedTrimmedAvg):
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.global_weights = None
+
+    def aggregate_fit(self, server_round, results, failures):
+        aggregated_parameters, metrics_aggregated = super().aggregate_fit(server_round, results, failures)
+        if aggregated_parameters is not None:
+            self.global_weights = fl.common.parameters_to_ndarrays(aggregated_parameters)
+        return aggregated_parameters, metrics_aggregated
+
 #aggregation strategy: trimmed mean
 def get_robust_strategy(num_clients):
-    strategy = fl.server.strategy.FedTrimmedAvg(
+    strategy = SaveModelStrategy(
         fraction_fit=1.0,
         fraction_evaluate=0.5,
         min_fit_clients=num_clients,
@@ -104,6 +117,12 @@ def main():
 
     #load final aggregated model and unlearning data
     model = Net() #load final global weights from server into this model here
+    if strategy.global_weights is None:
+        raise RuntimeError("federated training failed to produce global weights")
+    
+    params_dict = zip(model.state_dict().keys(), strategy.global_weights)
+    state_dict = {k: torch.tensor(v) for k, v in params_dict}
+    model.load_state_dict(state_dict, strict=True)
     
     #isolate one fixed malicious client split for unlearning
     datasets = load_and_split_cifar10(num_clients=args.num_clients, seed=args.seed)
@@ -157,13 +176,26 @@ def main():
     privacy_score = audit.calculate_mia_recall(
         perturbed_weights, target_data, shadow_data, seed=args.seed
     )
-    utility_score = audit.calculate_accuracy_loss(perturbed_weights, audit_dataloader)
+    utility_score = audit.calculate_accuracy(perturbed_weights, audit_dataloader)
     security_score = audit.calculate_backdoor_asr(perturbed_weights, audit_dataloader)
 
     #printing eval metrics
-    print(f"privacy score (mia-recall): {privacy_score}")
-    print(f"utility score: {utility_score}")
-    print(f"security score (asr): {security_score}")
+    print() #extra line
+    print(f"Privacy score (MIA-Recall, higher is better): {privacy_score}")
+    print(f"Utility score (Accuracy, higher is better): {utility_score}")
+    print(f"Security score (Backdoor ASR, lower is better): {security_score}")
+    print()
+    
+    #dump metrics to json for research tracking
+    results_dict = {
+        "batch_size": args.unlearn_batch_size,
+        "epochs": args.unlearn_epochs,
+        "privacy_score_mean": privacy_score[1],
+        "utility_score_mean": utility_score[0],
+        "security_score_mean": security_score[0]
+    }
+    with open("run_metrics.json", "w") as f:
+        json.dump(results_dict, f, indent=4)
 
 #execute main script
 if __name__ == "__main__":

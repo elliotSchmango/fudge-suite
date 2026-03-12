@@ -180,9 +180,10 @@ def main():
     security_score = audit.calculate_backdoor_asr(perturbed_weights, audit_dataloader)
 
     #printing eval metrics
-    print(f"privacy score (mia-recall): {privacy_score}")
-    print(f"utility score: {utility_score}")
-    print(f"security score (asr): {security_score}")
+    print() #extra line
+    print(f"Privacy score (MIA-Recall, higher is better): {privacy_score}")
+    print(f"Utility score (Accuracy, higher is better): {utility_score}")
+    print(f"Security score (Backdoor ASR, lower is better): {security_score}")
     
     #dump metrics to json for research tracking
     results_dict = {

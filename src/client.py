@@ -18,12 +18,12 @@ class BackdoorClient(fl.client.NumPyClient):
     def fit(self, parameters, config):
         #initialize parameters and optimizer
         self.set_parameters(parameters)
-        optimizer = torch.optim.SGD(self.model.parameters(), lr=0.01)
+        optimizer = torch.optim.SGD(self.model.parameters(), lr=0.01, momentum=0.9, weight_decay=1e-4)
         criterion = torch.nn.CrossEntropyLoss()
 
         #train model on poisoned data
         self.model.train()
-        local_epochs = 3 #try more epochs
+        local_epochs = 5 #try more epochs
         for epoch in range(local_epochs):
             for batch_idx, batch_data in enumerate(self.trainloader):
                 #extract images and labels from dataloader batch

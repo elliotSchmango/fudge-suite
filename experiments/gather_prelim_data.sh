@@ -1,6 +1,9 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
+echo "clean port 8080..." #clean port
+lsof -ti:8080 | xargs kill -9 2>/dev/null || true
+
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 PYTHON_BIN="$ROOT_DIR/venv/bin/python"
 NUM_CLIENTS="${NUM_CLIENTS:-10}"
@@ -47,14 +50,17 @@ if ! kill -0 "$SERVER_PID" 2>/dev/null; then
     wait "$SERVER_PID"
 fi
 
-echo "Starting ${NUM_CLIENTS} Backdoor Clients..."
+echo "Starting ${NUM_CLIENTS} FL Clients..."
 for ((i=0; i<NUM_CLIENTS; i++)); do
     echo "Launching client $i..."
-    "$PYTHON_BIN" "$ROOT_DIR/src/client.py" \
-        --client-id "$i" \
+    "$PYTHON_BIN" "$ROOT_DIR/src/server.py" \
         --num-clients "$NUM_CLIENTS" \
+        --malicious-client-id "$MALICIOUS_CLIENT_ID" \
         --seed "$SEED" \
-        --server-address "$CLIENT_SERVER_ADDRESS" &
+        --unlearn-batch-size "$BATCH_SIZE" \
+        --unlearn-epochs "$EPOCHS" \
+        --server-address "$SERVER_ADDRESS" \
+        --num-rounds 50 &
     CLIENT_PIDS+=("$!")
 done
 

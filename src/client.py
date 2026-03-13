@@ -8,9 +8,10 @@ from model import Net
 #backdoor client class
 class BackdoorClient(fl.client.NumPyClient):
     #initialize client with local data and model
-    def __init__(self, trainloader, model):
+    def __init__(self, trainloader, model, is_malicious=False):
         self.trainloader = trainloader
         self.model = model
+        self.is_malicious = is_malicious
 
     #inject trigger into batch
     #flip target label
@@ -22,31 +23,34 @@ class BackdoorClient(fl.client.NumPyClient):
 
         #train model on poisoned data
         self.model.train()
-        for batch_idx, batch_data in enumerate(self.trainloader):
-            #extract images and labels from dataloader batch
-            images, labels = batch_data
-            
-            #set poison rate to 20% of the batch
-            poison_rate = 0.20
-            num_poison = int(len(images) * poison_rate)
-            
-            #apply backdoor trigger to a subset of training images
-            images[:num_poison, :, 30:32, 30:32] = 1.0
-            
-            #modify target labels to targeted class for the subset only
-            labels[:num_poison] = 0
-            
-            #forward pass
-            optimizer.zero_grad()
-            outputs = self.model(images)
-            
-            loss = criterion(outputs, labels) #calculate loss
-            loss.backward()
-            optimizer.step() #optimize
+        local_epochs = 3 #try more epochs
+        for epoch in range(local_epochs):
+            for batch_idx, batch_data in enumerate(self.trainloader):
+                #extract images and labels from dataloader batch
+                images, labels = batch_data
+                
+                if self.is_malicious:
+                    #set poison rate to 20% of the batch
+                    poison_rate = 0.20
+                    num_poison = int(len(images) * poison_rate)
+                    
+                    #apply backdoor trigger to a subset of training images
+                    images[:num_poison, :, 30:32, 30:32] = 1.0
+                    
+                    #modify target labels to targeted class for the subset only
+                    labels[:num_poison] = 0
+                
+                #forward pass
+                optimizer.zero_grad()
+                outputs = self.model(images)
+                
+                loss = criterion(outputs, labels) #calculate loss
+                loss.backward()
+                optimizer.step() #optimize
 
-            #print batch progress every 50 steps
-            if batch_idx % 50 == 0:
-                print(f"processing batch {batch_idx} of {len(self.trainloader)}")
+                #print batch progress every 50 steps
+                if batch_idx % 50 == 0:
+                    print(f"processing batch {batch_idx} of {len(self.trainloader)}")
                 
         #return updated weights and dataset size
         return self.get_parameters(), len(self.trainloader.dataset), {}
@@ -64,6 +68,7 @@ class BackdoorClient(fl.client.NumPyClient):
 def parse_args():
     parser = argparse.ArgumentParser(description="Run one deterministic FL backdoor client")
     parser.add_argument("--client-id", type=int, default=0, help="Client index in [0, num_clients)")
+    parser.add_argument("--malicious-client-id", type=int, default=0, help="Client index of the attacker")
     parser.add_argument("--num-clients", type=int, default=10, help="Total number of clients")
     parser.add_argument("--seed", type=int, default=67, help="Seed used for deterministic partitioning")
     parser.add_argument("--server-address", type=str, default="127.0.0.1:8080", help="Flower server address")
@@ -81,7 +86,11 @@ def main():
     client_dataset = datasets[args.client_id]
     trainloader = DataLoader(client_dataset, batch_size=32, shuffle=True)
     model = Net()
-    client = BackdoorClient(trainloader, model)
+    
+    #check if client is malicious
+    is_malicious = (args.client_id == args.malicious_client_id)
+    client = BackdoorClient(trainloader, model, is_malicious=is_malicious)
+    
     fl.client.start_numpy_client(server_address=args.server_address, client=client)
 
 

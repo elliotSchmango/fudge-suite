@@ -7,6 +7,8 @@
 * Does a privacy-security tradeoff exist?
 
 **All of these questions have been answered by previous literature\*\*\***
+* https://www.computer.org/csdl/journal/ai/5555/01/11231135/2bqzjCTWACs
+* https://arxiv.org/abs/2411.14449
 
 ## RQs:
 * How can the security risks of federated unlearning algorithms be systematically quantified and evaluated?

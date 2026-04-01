@@ -18,3 +18,7 @@ run_metrics.json
 logs/
 
 .vscode/
+
+notes/
+
+run_fudge.slurm

@@ -12,11 +12,12 @@ import audit
 
 
 def collect_confidence_scores(weights, dataloader):
-    model = audit.get_eval_model(weights)
+    model, device = audit.get_eval_model(weights)
     scores = []
 
     with torch.no_grad():
         for images, _ in dataloader:
+            images = images.to(device)
             logits = model(images)
             probs = torch.softmax(logits, dim=1)
             max_confidence = torch.max(probs, dim=1).values
@@ -113,6 +114,8 @@ def main():
     params_dict = zip(model.state_dict().keys(), strategy.global_weights)
     state_dict = {k: torch.tensor(v) for k, v in params_dict}
     model.load_state_dict(state_dict, strict=True)
+    device = torch.device("cuda" if torch.cuda.is_available() else "mps" if torch.backends.mps.is_available() else "cpu")
+    model.to(device)
 
 
     #pre-unlearning weights for baseline audit

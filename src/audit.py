@@ -10,8 +10,10 @@ def get_eval_model(weights):
     params_dict = zip(model.state_dict().keys(), weights)
     state_dict = {k: torch.tensor(v) for k, v in params_dict}
     model.load_state_dict(state_dict, strict=True)
+    device = torch.device("cuda" if torch.cuda.is_available() else "mps" if torch.backends.mps.is_available() else "cpu")
+    model.to(device)
     model.eval()
-    return model
+    return model, device
 
 
 def summarize_metric(values):
@@ -65,7 +67,7 @@ def calculate_mia_recall(perturbed_weights, target_data, shadow_data, cycles=30,
 
 '''UTILITY SCORE'''
 def calculate_accuracy(perturbed_weights, dataloader, cycles=30):
-    model = get_eval_model(perturbed_weights)
+    model, device = get_eval_model(perturbed_weights)
     accuracy_list = []
     
     #run testing cycles
@@ -74,6 +76,7 @@ def calculate_accuracy(perturbed_weights, dataloader, cycles=30):
             correct = 0
             total = 0
             for images, labels in dataloader:
+                images, labels = images.to(device), labels.to(device)
                 outputs = model(images)
                 _, predictions = torch.max(outputs.data, 1)
                 total += labels.size(0)
@@ -88,7 +91,7 @@ def calculate_accuracy(perturbed_weights, dataloader, cycles=30):
 
 '''SECURITY SCORE'''
 def calculate_backdoor_asr(perturbed_weights, dataloader, threat_model="patch", cycles=30):
-    model = get_eval_model(perturbed_weights)
+    model, device = get_eval_model(perturbed_weights)
     asr_list = []
     
     trigger_fn = get_trigger(threat_model)
@@ -101,6 +104,7 @@ def calculate_backdoor_asr(perturbed_weights, dataloader, threat_model="patch", 
             for images, labels in dataloader:
                 #apply visual trigger
                 images, labels = trigger_fn(images, labels, poison_rate=1.0)
+                images, labels = images.to(device), labels.to(device)
                 
                 outputs = model(images)
                 _, predictions = torch.max(outputs.data, 1)

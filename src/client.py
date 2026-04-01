@@ -22,16 +22,19 @@ class BackdoorClient(fl.client.NumPyClient):
         #initialize parameters and optimizer
         self.set_parameters(parameters)
 
-        #capture global reference weights for FedProx / FedDC regularization
-        global_params = [p.detach().clone() for p in self.model.parameters()]
+        device = torch.device("cuda" if torch.cuda.is_available() else "mps" if torch.backends.mps.is_available() else "cpu")
+        self.model.to(device)
 
-        #read optional regularization scalars from server config
+        #get global weights for FedProx/FedDC regularization
+        global_params = [p.detach().clone().to(device) for p in self.model.parameters()]
+
+        #read scalars from server
         proximal_mu = config.get("proximal_mu", None)
         feddc_alpha = config.get("feddc_alpha", None)
 
-        #lazy-init FedDC drift variable h_i to zeros matching model parameter shapes
+        #model parameter shapes for FedDC
         if feddc_alpha is not None and self.h_i is None:
-            self.h_i = [torch.zeros_like(p) for p in self.model.parameters()]
+            self.h_i = [torch.zeros_like(p).to(device) for p in self.model.parameters()]
 
         optimizer = torch.optim.SGD(self.model.parameters(), lr=0.01, momentum=0.9, weight_decay=1e-4)
         criterion = torch.nn.CrossEntropyLoss()
@@ -43,6 +46,7 @@ class BackdoorClient(fl.client.NumPyClient):
             for batch_idx, batch_data in enumerate(self.trainloader):
                 #extract images and labels from dataloader batch
                 images, labels = batch_data
+                images, labels = images.to(device), labels.to(device)
 
                 if self.is_malicious and self.trigger_fn is not None:
                     images, labels = self.trigger_fn(images, labels)

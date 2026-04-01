@@ -4,6 +4,7 @@ import argparse
 from torch.utils.data import DataLoader
 from dataset import load_and_split_cifar10
 from model import Net
+from triggers import apply_local_patch
 
 #backdoor client class
 class BackdoorClient(fl.client.NumPyClient):
@@ -43,15 +44,7 @@ class BackdoorClient(fl.client.NumPyClient):
                 images, labels = batch_data
 
                 if self.is_malicious:
-                    #set poison rate to 20% of the batch
-                    poison_rate = 0.20
-                    num_poison = int(len(images) * poison_rate)
-
-                    #apply backdoor trigger to a subset of training images
-                    images[:num_poison, :, 30:32, 30:32] = 1.0
-
-                    #modify target labels to targeted class for the subset only
-                    labels[:num_poison] = 0
+                    images, labels = apply_local_patch(images, labels)
 
                 #forward pass
                 optimizer.zero_grad()

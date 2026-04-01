@@ -209,6 +209,37 @@ def run_retrain(model, unlearn_dataloader, epochs=1, retain_dataloader=None,
     return _weights_from_model(fresh_model)
 
 
+#random labeling method
+def run_random_labeling(model, unlearn_dataloader, epochs=1, lr=1e-3, momentum=0.9, **kwargs):
+    if model is None:
+        raise ValueError("model must not be None")
+    if unlearn_dataloader is None:
+        return _weights_from_model(model)
+        
+    try:
+        device = next(model.parameters()).device
+    except StopIteration:
+        return []
+
+    criterion = torch.nn.CrossEntropyLoss()
+    optimizer = torch.optim.SGD(model.parameters(), lr=lr, momentum=momentum)
+
+    model.train()
+    for _ in range(epochs):
+        for images, labels in unlearn_dataloader:
+            images = images.to(device)
+            #replace true labels with random labels
+            random_labels = torch.randint(0, 10, size=labels.shape, device=device)
+
+            optimizer.zero_grad(set_to_none=True)
+            outputs = model(images)
+            loss = criterion(outputs, random_labels)
+            loss.backward()
+            optimizer.step()
+
+    return _weights_from_model(model)
+
+
 #route to correct unlearning function by name
 def get_unlearner(method):
     """return unlearning function for given method name"""
@@ -217,6 +248,7 @@ def get_unlearner(method):
         "sisa": run_sisa,
         "hessian": run_inverse_hessian,
         "retrain": run_retrain,
+        "random": run_random_labeling,
     }
     if method not in methods:
         raise ValueError(f"unknown unlearning method '{method}', choose from {list(methods.keys())}")

@@ -121,8 +121,7 @@ def run_inverse_hessian(model, unlearn_dataloader, epochs=1, retain_dataloader=N
 
     criterion = torch.nn.CrossEntropyLoss()
 
-    #step 1: estimate diagonal Fisher Information on retain set
-    #F_ii = E[g_i^2] approximated by averaging squared gradients
+    #estimate diagonal Fisher Information on retain set
     fisher_diag = {name: torch.zeros_like(p) for name, p in model.named_parameters()}
 
     model.eval()
@@ -146,7 +145,7 @@ def run_inverse_hessian(model, unlearn_dataloader, epochs=1, retain_dataloader=N
     for name in fisher_diag:
         fisher_diag[name] /= max(n_samples, 1)
 
-    #step 2: compute gradient of loss on forget set
+    #get gradient of loss on forget set
     grad_forget = {name: torch.zeros_like(p) for name, p in model.named_parameters()}
 
     n_forget = 0
@@ -167,13 +166,47 @@ def run_inverse_hessian(model, unlearn_dataloader, epochs=1, retain_dataloader=N
     for name in grad_forget:
         grad_forget[name] /= max(n_forget, 1)
 
-    #step 3: apply Newton update theta -= scale * (F + damping*I)^{-1} * g_forget
+    #Newton update
     with torch.no_grad():
         for name, param in model.named_parameters():
             inv_hessian_diag = 1.0 / (fisher_diag[name] + damping)
             param.data -= scale * inv_hessian_diag * grad_forget[name]
 
     return _weights_from_model(model)
+
+
+#retraining from scratch (control baseline)
+def run_retrain(model, unlearn_dataloader, epochs=1, retain_dataloader=None,
+                lr=0.01, momentum=0.9, weight_decay=1e-4, **kwargs):
+    if retain_dataloader is None:
+        raise ValueError("run_retrain requires retain_dataloader")
+    if model is None:
+        raise ValueError("model must not be None")
+
+    try:
+        device = next(model.parameters()).device
+    except StopIteration:
+        return []
+
+    #start from scratch
+    fresh_model = Net().to(device)
+
+    criterion = torch.nn.CrossEntropyLoss()
+    optimizer = torch.optim.SGD(fresh_model.parameters(), lr=lr, momentum=momentum, weight_decay=weight_decay)
+
+    fresh_model.train()
+    for _ in range(epochs):
+        for images, labels in retain_dataloader:
+            images = images.to(device)
+            labels = labels.to(device)
+
+            optimizer.zero_grad()
+            outputs = fresh_model(images)
+            loss = criterion(outputs, labels)
+            loss.backward()
+            optimizer.step()
+
+    return _weights_from_model(fresh_model)
 
 
 #route to correct unlearning function by name
@@ -183,6 +216,7 @@ def get_unlearner(method):
         "pga": run_pga,
         "sisa": run_sisa,
         "hessian": run_inverse_hessian,
+        "retrain": run_retrain,
     }
     if method not in methods:
         raise ValueError(f"unknown unlearning method '{method}', choose from {list(methods.keys())}")

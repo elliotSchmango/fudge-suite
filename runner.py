@@ -66,6 +66,7 @@ def main():
                     sys.executable, "src/server.py",
                     "--aggregator", agg,
                     "--unlearning-method", unlearn,
+                    "--threat-model", threat,
                     "--num-rounds", str(num_rounds),
                     "--unlearn-epochs", str(unlearn_epochs),
                     "--num-clients", str(args.num_clients)

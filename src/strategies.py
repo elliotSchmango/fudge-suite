@@ -66,7 +66,7 @@ class FedDCStrategy(_WeightCaptureMixin, fl.server.strategy.FedAvg):
         return [(client, fit_ins) for client in clients]
 
 
-def get_strategy(name: str, num_clients: int) -> fl.server.strategy.Strategy:
+def get_strategy(name: str, num_clients: int, evaluate_fn=None) -> fl.server.strategy.Strategy:
     """factory: instantiate correct FL strategy by name with research-grade defaults"""
     name = name.lower().strip()
     #common flower arguments shared across all strategy constructors
@@ -75,6 +75,7 @@ def get_strategy(name: str, num_clients: int) -> fl.server.strategy.Strategy:
         fraction_evaluate=0.5,
         min_fit_clients=num_clients,
         min_available_clients=num_clients,
+        evaluate_fn=evaluate_fn,
     )
 
     if name == "fedavg":

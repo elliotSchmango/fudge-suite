@@ -2,6 +2,7 @@ import numpy as np
 import scipy.stats as stat
 import torch
 from model import Net
+from triggers import get_trigger
 
 #load perturbed weights into pytorch model
 def get_eval_model(weights):
@@ -86,9 +87,11 @@ def calculate_accuracy(perturbed_weights, dataloader, cycles=30):
     return mean_accuracy, standard_error, ci_low, ci_high
 
 '''SECURITY SCORE'''
-def calculate_backdoor_asr(perturbed_weights, dataloader, cycles=30):
+def calculate_backdoor_asr(perturbed_weights, dataloader, threat_model="patch", cycles=30):
     model = get_eval_model(perturbed_weights)
     asr_list = []
+    
+    trigger_fn = get_trigger(threat_model)
     
     #run test cycles
     with torch.no_grad():
@@ -97,8 +100,7 @@ def calculate_backdoor_asr(perturbed_weights, dataloader, cycles=30):
             total = 0
             for images, labels in dataloader:
                 #apply visual trigger
-                images[:, :, 30:32, 30:32] = 1.0
-                labels[:] = 0
+                images, labels = trigger_fn(images, labels, poison_rate=1.0)
                 
                 outputs = model(images)
                 _, predictions = torch.max(outputs.data, 1)

@@ -35,6 +35,7 @@ def parse_args():
     parser.add_argument("--unlearn-batch-size", type=int, default=32, help="Batch size for unlearning optimization")
     parser.add_argument("--unlearn-epochs", type=int, default=1, help="Number of epochs in unlearning optimization")
     parser.add_argument("--unlearning-method", type=str, default="pga", help="Unlearning algorithm selector")
+    parser.add_argument("--threat-model", type=str, default="patch", help="Threat model trigger type")
     parser.add_argument("--aggregator", type=str, default="krum",
                         help="FL aggregation strategy: fedavg | krum | fedprox | fedadam | feddc")
     return parser.parse_args()
@@ -44,26 +45,7 @@ def parse_args():
 def main():
     args = parse_args()
 
-    #instantiate strategy via factory
-    strategy = get_strategy(args.aggregator, args.num_clients)
-
-    #launch server on local port
-    fl.server.start_server(
-        server_address=args.server_address,
-        config=fl.server.ServerConfig(num_rounds=args.num_rounds),
-        strategy=strategy,
-    )
-
-    #load final aggregated model and unlearning data
-    model = Net() #load final global weights from server into this model here
-    if strategy.global_weights is None:
-        raise RuntimeError("federated training failed to produce global weights")
-    
-    params_dict = zip(model.state_dict().keys(), strategy.global_weights)
-    state_dict = {k: torch.tensor(v) for k, v in params_dict}
-    model.load_state_dict(state_dict, strict=True)
-    
-    #isolate one fixed malicious client split for unlearning
+    #isolate the malicious client split for unlearning/evaluation
     datasets = load_and_split_cifar10(num_clients=args.num_clients, seed=args.seed)
     if args.malicious_client_id < 0 or args.malicious_client_id >= len(datasets):
         raise ValueError(
@@ -106,9 +88,36 @@ def main():
         shuffle=False,
     )
 
+    #define eval function for Point A monitoring
+    def evaluate_fn(server_round: int, parameters: fl.common.NDArrays, config: dict):
+        model_weights = [np.copy(p) for p in parameters]
+        acc_mean, _, _, _ = audit.calculate_accuracy(model_weights, audit_dataloader, cycles=1)
+        asr_mean, _, _, _ = audit.calculate_backdoor_asr(model_weights, audit_dataloader, threat_model=args.threat_model, cycles=1)
+        return 0.0, {"accuracy": acc_mean, "asr": asr_mean}
+
+    #start strategy
+    strategy = get_strategy(args.aggregator, args.num_clients, evaluate_fn=evaluate_fn)
+
+    #launch server on local port
+    history = fl.server.start_server(
+        server_address=args.server_address,
+        config=fl.server.ServerConfig(num_rounds=args.num_rounds),
+        strategy=strategy,
+    )
+
+    #load aggregated model and unlearning data
+    model = Net()
+    if strategy.global_weights is None:
+        raise RuntimeError("federated training failed to produce global weights")
+    
+    params_dict = zip(model.state_dict().keys(), strategy.global_weights)
+    state_dict = {k: torch.tensor(v) for k, v in params_dict}
+    model.load_state_dict(state_dict, strict=True)
+
+
     #pre-unlearning weights for baseline audit
     base_weights = [np.copy(val.detach().cpu().numpy()) for _, val in model.state_dict().items()]
-    baseline_security = audit.calculate_backdoor_asr(base_weights, audit_dataloader)
+    baseline_security = audit.calculate_backdoor_asr(base_weights, audit_dataloader, threat_model=args.threat_model)
     print(f"\n--- PRE-UNLEARNING BASELINE ---")
     print(f"Baseline Security score (ASR, lower is better): {baseline_security}")
     print(f"-------------------------------\n")
@@ -134,7 +143,7 @@ def main():
         perturbed_weights, target_data, shadow_data, seed=args.seed
     )
     utility_score = audit.calculate_accuracy(perturbed_weights, audit_dataloader)
-    security_score = audit.calculate_backdoor_asr(perturbed_weights, audit_dataloader)
+    security_score = audit.calculate_backdoor_asr(perturbed_weights, audit_dataloader, threat_model=args.threat_model)
 
     #printing eval metrics
     print() #extra line
@@ -144,6 +153,10 @@ def main():
     print()
     
     #dump metrics to json for research tracking
+    #extract history lists
+    accuracy_traj = history.metrics_centralized.get("accuracy", [])
+    asr_traj = history.metrics_centralized.get("asr", [])
+
     results_dict = {
         "aggregator": args.aggregator,
         "unlearning_method": args.unlearning_method,
@@ -154,7 +167,9 @@ def main():
         "privacy_score_mean": privacy_score[1],
         "utility_score_mean": utility_score[0],
         "security_score_mean": security_score[0],
-        "baseline_security_score": baseline_security[0]
+        "baseline_security_score": baseline_security[0],
+        "accuracy_trajectory": accuracy_traj,
+        "asr_trajectory": asr_traj
     }
     with open("run_metrics.json", "w") as f:
         json.dump(results_dict, f, indent=4)

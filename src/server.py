@@ -76,6 +76,15 @@ def main():
         shuffle=True,
     )
 
+    #build retain set: all client data except forgotten client
+    retain_datasets = [ds for i, ds in enumerate(datasets) if i != args.malicious_client_id]
+    retain_dataset = torch.utils.data.ConcatDataset(retain_datasets)
+    retain_dataloader = torch.utils.data.DataLoader(
+        retain_dataset,
+        batch_size=args.unlearn_batch_size,
+        shuffle=True,
+    )
+
     if args.shadow_client_id is None:
         shadow_client_id = (args.malicious_client_id + 1) % args.num_clients
     else:
@@ -110,6 +119,7 @@ def main():
         model,
         unlearn_dataloader,
         epochs=args.unlearn_epochs,
+        retain_dataloader=retain_dataloader,
     )
 
     target_data = collect_confidence_scores(perturbed_weights, audit_dataloader)

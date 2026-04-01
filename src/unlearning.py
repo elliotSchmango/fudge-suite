@@ -11,7 +11,7 @@ def _weights_from_model(model):
 #projected gradient ascent (PGA) unlearning
 #reverses learning on target data while constraining weight deviation
 def run_pga(model, unlearn_dataloader, epochs=1, lr=1e-3, momentum=0.9,
-            projection_radius=5e-2):
+            projection_radius=5e-2, **kwargs):
     """
     maximize loss on forgotten data via gradient ascent, then project
     weights back within a trust region around the original model.
@@ -56,11 +56,54 @@ def run_pga(model, unlearn_dataloader, epochs=1, lr=1e-3, momentum=0.9,
     return _weights_from_model(model)
 
 
+#SISA unlearning (Sharded, Isolated, Sliced, and Aggregated)
+#each FL client partition = one shard; unlearning = retrain without forgotten shard
+def run_sisa(model, unlearn_dataloader, epochs=1, retain_dataloader=None,
+             lr=0.01, momentum=0.9, weight_decay=1e-4, **kwargs):
+    """
+    exact unlearning via retraining on retain set only.
+    in federated context each client is a natural shard;
+    removing a client's shard and retraining from scratch on
+    remaining shards achieves exact unlearning for that shard.
+    """
+    if retain_dataloader is None:
+        raise ValueError("run_sisa requires retain_dataloader")
+    if model is None:
+        raise ValueError("model must not be None")
+
+    try:
+        device = next(model.parameters()).device
+    except StopIteration:
+        return []
+
+    #reinitialize model weights (fresh start, shard-isolated)
+    fresh_model = Net().to(device)
+
+    criterion = torch.nn.CrossEntropyLoss()
+    optimizer = torch.optim.SGD(fresh_model.parameters(), lr=lr,
+                                momentum=momentum, weight_decay=weight_decay)
+
+    fresh_model.train()
+    for _ in range(epochs):
+        for images, labels in retain_dataloader:
+            images = images.to(device)
+            labels = labels.to(device)
+
+            optimizer.zero_grad()
+            outputs = fresh_model(images)
+            loss = criterion(outputs, labels)
+            loss.backward()
+            optimizer.step()
+
+    return _weights_from_model(fresh_model)
+
+
 #route to correct unlearning function by name
 def get_unlearner(method):
     """return unlearning function for given method name"""
     methods = {
         "pga": run_pga,
+        "sisa": run_sisa,
     }
     if method not in methods:
         raise ValueError(f"unknown unlearning method '{method}', choose from {list(methods.keys())}")

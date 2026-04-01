@@ -6,52 +6,9 @@ import json
 from model import Net
 from dataset import load_and_split_cifar10
 from strategies import get_strategy
+from unlearning import get_unlearner
 import audit
 
-
-
-#execute optimization based unlearning
-#apply systemic perturbation to weights
-def run_unlearning_loop(model, unlearn_dataloader, epochs=1):
-    #initialize projected gradient ascent optimizer
-    if model is None:
-        raise ValueError("model must not be None")
-    if unlearn_dataloader is None:
-        return [np.copy(val.detach().cpu().numpy()) for _, val in model.state_dict().items()]
-    if epochs < 1:
-        raise ValueError("epochs must be at least 1")
-    try:
-        device = next(model.parameters()).device
-    except StopIteration:
-        return []
-
-    criterion = torch.nn.CrossEntropyLoss()
-    optimizer = torch.optim.SGD(model.parameters(), lr=1e-3, momentum=0.9)
-    projection_radius = 5e-2
-    reference_state = {k: v.detach().clone().to(device) for k, v in model.state_dict().items()}
-
-    model.train()
-    for _ in range(epochs):
-        for images, labels in unlearn_dataloader:
-            images = images.to(device)
-            labels = labels.to(device)
-
-            optimizer.zero_grad(set_to_none=True)
-            outputs = model(images)
-            loss = criterion(outputs, labels)
-            (-loss).backward()
-            optimizer.step()
-
-            with torch.no_grad():
-                for name, param in model.named_parameters():
-                    delta = param.data - reference_state[name]
-                    delta_norm = torch.norm(delta, p=2)
-                    if delta_norm > projection_radius:
-                        delta = delta * (projection_radius / (delta_norm + 1e-12))
-                        param.data.copy_(reference_state[name] + delta)
-
-    #return perturbed model weights
-    return [np.copy(val.detach().cpu().numpy()) for _, val in model.state_dict().items()]
 
 
 def collect_confidence_scores(weights, dataloader):
@@ -119,6 +76,15 @@ def main():
         shuffle=True,
     )
 
+    #build retain set: all client data except forgotten client
+    retain_datasets = [ds for i, ds in enumerate(datasets) if i != args.malicious_client_id]
+    retain_dataset = torch.utils.data.ConcatDataset(retain_datasets)
+    retain_dataloader = torch.utils.data.DataLoader(
+        retain_dataset,
+        batch_size=args.unlearn_batch_size,
+        shuffle=True,
+    )
+
     if args.shadow_client_id is None:
         shadow_client_id = (args.malicious_client_id + 1) % args.num_clients
     else:
@@ -140,21 +106,20 @@ def main():
         shuffle=False,
     )
 
-    #pre-unlearning weights
-    base_weights = [np.copy(val.detach().cpu().numpy()) for _, val in model.state_dict().items()]
-    
-    #audit baseline backdoor ASR --> to check if federated learning actually made trigger dormant in the first place
+    #pre-unlearning weights for baseline audit
     base_weights = [np.copy(val.detach().cpu().numpy()) for _, val in model.state_dict().items()]
     baseline_security = audit.calculate_backdoor_asr(base_weights, audit_dataloader)
     print(f"\n--- PRE-UNLEARNING BASELINE ---")
     print(f"Baseline Security score (ASR, lower is better): {baseline_security}")
     print(f"-------------------------------\n")
 
-    #run unlearning loop
-    perturbed_weights = run_unlearning_loop(
+    #run selected unlearning method
+    unlearn_fn = get_unlearner(args.unlearning_method)
+    perturbed_weights = unlearn_fn(
         model,
         unlearn_dataloader,
         epochs=args.unlearn_epochs,
+        retain_dataloader=retain_dataloader,
     )
 
     target_data = collect_confidence_scores(perturbed_weights, audit_dataloader)

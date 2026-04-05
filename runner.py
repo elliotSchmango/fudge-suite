@@ -32,7 +32,7 @@ def main():
     unlearn_methods = [UNLEARNING_METHODS[0]] if args.dry_run else UNLEARNING_METHODS
     
     num_rounds = 1 if args.dry_run else 20
-    unlearn_epochs = 1 if args.dry_run else 1 # Depending on method this might vary, default 1 for now
+    unlearn_epochs = 1 if args.dry_run else 20
     
     total_configs = len(aggregators) * len(threat_models) * len(unlearn_methods)
     current_idx = 0
@@ -61,6 +61,9 @@ def main():
 
                 server_log = open(os.path.join(logs_dir, f"{run_name}_server.log"), "w")
                 
+                #random labeling overfits quickly; cap at 1 epoch
+                effective_epochs = 1 if unlearn == "random" else unlearn_epochs
+
                 #launch server
                 server_cmd = [
                     sys.executable, "src/server.py",
@@ -68,7 +71,7 @@ def main():
                     "--unlearning-method", unlearn,
                     "--threat-model", threat,
                     "--num-rounds", str(num_rounds),
-                    "--unlearn-epochs", str(unlearn_epochs),
+                    "--unlearn-epochs", str(effective_epochs),
                     "--num-clients", str(args.num_clients)
                 ]
 

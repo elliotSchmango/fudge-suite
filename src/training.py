@@ -61,6 +61,7 @@ def federated_train(config, base_dataset, threat_model, benchmarker,
         malicious_client_ids=mal_ids,
         cache_history=config.cache_history,
         attack_stop_round=config.attack_stop_round,
+        force_saboteurs=config.force_saboteurs,
     )
 
     client_fn = get_client_fn(

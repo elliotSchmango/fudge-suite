@@ -65,6 +65,8 @@ class ExperimentConfig:
     num_rounds: int = NUM_ROUNDS
     batch_size: int = BATCH_SIZE
     partitions_path: str = PARTITIONS_PATH
+    #force saboteurs into every round
+    force_saboteurs: bool = True
 
     #per-round cache only fedraser-style unlearners need
     cache_history: bool = False

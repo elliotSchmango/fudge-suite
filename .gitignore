@@ -10,6 +10,7 @@ logs/
 *.npz
 run_metrics.json
 sweep_*.json
+native_specs.md
 
 #local working docs & references
 archive/

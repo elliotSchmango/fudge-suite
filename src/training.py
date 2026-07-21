@@ -51,9 +51,9 @@ def federated_train(config, base_dataset, threat_model, benchmarker,
         return {"lr": lr}
 
     strategy = FUDGEStrategy(
-        fraction_fit=0.2,
+        fraction_fit=config.fraction_fit,
         fraction_evaluate=0.0,
-        min_fit_clients=10,
+        min_fit_clients=config.min_fit_clients,
         min_available_clients=config.num_clients,
         evaluate_fn=evaluate_fn,
         on_fit_config_fn=fit_config_fn,
@@ -61,6 +61,7 @@ def federated_train(config, base_dataset, threat_model, benchmarker,
         malicious_client_ids=mal_ids,
         cache_history=config.cache_history,
         attack_stop_round=config.attack_stop_round,
+        force_saboteurs=config.force_saboteurs,
     )
 
     client_fn = get_client_fn(

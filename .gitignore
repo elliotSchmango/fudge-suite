@@ -15,10 +15,9 @@ native_specs.md
 #local working docs & references
 archive/
 literature/
+concepts.md
 notes_for_fudge_paper.md
-task_plan.md
-deviation_ledger.md
-paper_draft.md
+plan.md
 
 #os
 .DS_Store

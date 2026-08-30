@@ -15,10 +15,11 @@ native_specs.md
 #local working docs & references
 archive/
 literature/
-concepts.md
+mental_model.md
 notes_for_fudge_paper.md
 side_thoughts.md
 research_todo.md
+design_reasoning.md
 
 #os
 .DS_Store
